@@ -1,0 +1,388 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0">
+    <title>Tetris</title>
+    <!--<link href="https://raw.githack.com/DonDejvo/helloworld/main/styles/master.css" rel="stylesheet">-->
+    <style>
+        * { user-select: none; -moz-user-select: none; -webkit-user-select: none; box-sizing: border-box; } body { margin: 0; background-color: black; } .canvas { position: fixed; left: 0; top: 0; } .button { position: absolute; z-index: 99; width: 80px; height: 80px; background: grey; opacity: 0.8; display: flex; align-items: center; justify-content: center; border: 2px solid orange; } .button > span { font-size: 10px; color: white; text-transform: uppercase; font-family: sans-serif; }
+    </style>
+    <style>
+        #button1 {
+            left: 5px;
+            bottom: 5px;
+        }
+        #button2 {
+            left: 100px;
+            bottom: 5px;
+        }
+        #button3 {
+            right: 5px;
+            bottom: 100px;
+        }
+        #button4 {
+            right: 5px;
+            bottom: 5px;
+        }
+        #pause-button {
+            right: 5px;
+            top: 5px;
+        }
+        #score {
+            position: absolute;
+            left: 0;
+            top: 0;
+            color: white;
+            font-size: 16;
+            font-weight: bold;
+            font-family: sans-serif;
+            text-transform: uppercase;
+            padding: 10px;
+        }
+        #intro {
+            position: fixed;
+            z-index: 100;
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: black;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="intro">
+        <h1>Tetris</h1>
+        <p id="intro-text">loading...</p>
+    </div>
+        
+    <canvas class="canvas" id="game"></canvas>
+    <div class="button" id="button1">
+        <span>left</span>
+    </div>
+    <div class="button" id="button2">
+        <span>right</span>
+    </div>
+    <div class="button" id="button3">
+        <span>rotate</span>
+    </div>
+    <div class="button" id="button4">
+        <span>down</span>
+    </div>
+
+    <div class="button" id="pause-button">
+        <span>pause</span>
+    </div>
+    <div id="score"></div>
+
+    <audio id="music" src="https://raw.githack.com/DonDejvo/helloworld/main/games/tetris/assets/tetris-gameboy-01.mp3" loop></audio>
+
+    <script src="https://raw.githack.com/BartikaKumar/Popify/main/script.js"></script>
+
+    <script src="https://raw.githack.com/DonDejvo/helloworld/main/utils/master.js"></script>
+    <script src="https://raw.githack.com/DonDejvo/helloworld/main/utils/preload.js"></script>
+    <script src="https://raw.githack.com/DonDejvo/helloworld/main/utils/keyboard.js"></script>
+    <script src="https://raw.githack.com/DonDejvo/helloworld/main/utils/button.js"></script>
+    <script src="https://raw.githack.com/DonDejvo/helloworld/main/utils/engine.js"></script>
+    
+    <script>
+        const M = 20;
+const N = 10;
+const TILE = 18;
+const WIDTH = 320;
+const HEIGHT = 480;
+const FIGURES = [
+    [1,3,5,7], // I
+    [2,4,5,7], // Z
+    [3,5,4,6], // S
+    [3,5,4,7], // T
+    [2,3,5,7], // L
+    [3,5,7,6], // J
+    [2,3,4,5], // O
+];
+const COLORS = 8;
+const DELAY = 8;
+const OFFSET = [28, 30];
+
+let grid = Array(M).fill(0).map(a => Array(N));
+
+let buffer = document.createElement("canvas").getContext("2d");
+buffer.canvas.width = WIDTH;
+buffer.canvas.height = HEIGHT;
+
+let c, ctx;
+
+let loader;
+let engine;
+let texture, bg, fg;
+
+let score = 0;
+
+let keyboard, btn;
+
+let shape = {
+    tiles: Array(4),
+    color: 0,
+    dx: 0,
+    dy: 0,
+    timer: 0,
+    rotate: false,
+    reset: function() {
+        const figure = FIGURES[randint(0, FIGURES.length - 1)];
+        const left = randint(0, N - 2);
+        for(let i = 0; i < figure.length; i++) {
+            const x = figure[i] % 2 + left;
+            const y = Math.floor(figure[i] / 2) - 4;
+            this.tiles[i] = {x: x, y: y};
+        }
+        this.color = randint(0, COLORS - 1);
+    },
+    draw: function() {
+        for(let i = 0; i < this.tiles.length; i++) {
+            if(this.tiles[i].y >= 0) {
+                buffer.drawImage(texture, this.color * TILE, 0, TILE, TILE, this.tiles[i].x * TILE + OFFSET[0], this.tiles[i].y * TILE + OFFSET[1], TILE, TILE);
+            }
+        }
+    },
+    update: function() {
+        let tiles;
+        this.timer++;
+        tiles = this.save();
+        for(let i = 0; i < this.tiles.length; i++) {
+            this.tiles[i].x += this.dx;
+        }
+        if(!this.check()) {
+            this.restore(tiles);
+        }
+        if(this.rotate) {
+            this.rotate = false;
+            tiles = this.save();
+            const p = {x: this.tiles[1].x, y: this.tiles[1].y};
+            for(let i = 0; i < this.tiles.length; i++) {
+                const x = this.tiles[i].y - p.y;
+                const y = this.tiles[i].x - p.x;
+                this.tiles[i].x = p.x - x;
+                this.tiles[i].y = p.y + y;
+            }
+            if(!this.check()) {
+                this.restore(tiles);
+            }
+        }
+        if(this.timer > DELAY || keyboard.isPressed("s") || btn.isPressed()) {
+            this.timer = 0;
+            tiles = this.save();
+            for(let i = 0; i < this.tiles.length; i++) {
+                this.tiles[i].y++;
+            }
+            if(!this.check()) {
+                this.restore(tiles);
+                this.place();
+            }
+        }
+        
+        this.dx = 0;
+    },
+    check: function() {
+        for(let i = 0; i < this.tiles.length; i++) {
+            if(this.tiles[i].x < 0 || this.tiles[i].x >= N || this.tiles[i].y >= M) {
+                return false;
+            } else if(this.tiles[i].y >= 0 && grid[this.tiles[i].y][this.tiles[i].x] != -1) {
+                return false;
+            }
+        }
+        return true;
+    },
+    save: function() {
+        const tiles = Array(this.tiles.length);
+        for(let i = 0; i < this.tiles.length; i++) {
+            tiles[i] = {x: this.tiles[i].x, y: this.tiles[i].y};
+        }
+        return tiles;
+    },
+    restore: function(tiles) {
+        for(let i = 0; i < this.tiles.length; i++) {
+            this.tiles[i] = {x: tiles[i].x, y: tiles[i].y};
+        }
+    },
+    place: function() {
+        let gameover = false;
+        for(let i = 0; i < this.tiles.length; i++) {
+            if(this.tiles[i].y < 0) {
+                gameover = true;
+                continue;
+            }
+            grid[this.tiles[i].y][this.tiles[i].x] = this.color;
+        }
+        this.reset();
+        if(gameover) {
+            handleGameover();
+        }
+    }
+};
+
+addEventListener("load", preload);
+
+function resize(w, h) {
+    const ratio = HEIGHT / WIDTH;
+    if(h / w > ratio) {
+        c.width = w;
+        c.height = w * ratio;
+    } else {
+        c.width = h / ratio;
+        c.height = h;
+    }
+    css(c, {
+        "left": ((innerWidth - c.width) / 2) + "px",
+        "top": ((innerHeight - c.height) / 2) + "px"
+    });
+}
+
+function handleResize(e) {
+    resize(innerWidth, innerHeight);
+}
+
+function resetGrid() {
+    score = 0;
+    for(let i = 0; i < M; i++) {
+        for(let j = 0; j < N; j++) {
+            grid[i][j] = -1;
+        }
+    }
+}
+
+function checkGrid() {
+    let k = M - 1;
+    for(let i = M - 1; i > 0; i--) {
+        let count = 0;
+        for(let j = 0; j < N; j++) {
+            if(grid[i][j] != -1) count++;
+            grid[k][j] = grid[i][j];
+        }
+        if(count < N) {
+            k--;
+        } else {
+            score += 10;
+        }
+    }
+}
+
+function drawGrid() {
+    for(let i = 0; i < M; i++) {
+        for(let j = 0; j < N; j++) {
+            if(grid[i][j] != -1) {
+                buffer.drawImage(texture, grid[i][j] * TILE, 0, TILE, TILE, j * TILE + OFFSET[0], i * TILE + OFFSET[1], TILE, TILE);
+            }
+        }
+    }
+}
+
+function handleStart() {
+    if(music.paused) music.play();
+    hide(id("intro"));
+    engine.start();
+}
+
+function handlePause(){
+    if(engine.paused) return;
+    engine.stop();
+    alertify({
+        title: "Game Paused",
+        confirmButtonText: "Continue",
+        onConfirmed: function(){
+            engine.start();
+        }
+    });
+}
+
+function handleGameover() {
+    engine.stop();
+    alertify({
+        title: "Game Over",
+        text: "score: " + score,
+        confirmButtonText: "Restart",
+        onConfirmed: function(){
+            resetGrid();
+            engine.start();
+        }
+    });
+}
+
+function handleLeft() {
+    if(engine.paused) return;
+    shape.dx = -1;
+}
+function handleRight() {
+    if(engine.paused) return;
+    shape.dx = 1;
+}
+function handleRotate() {
+    if(engine.paused) return;
+    shape.rotate = true;
+}
+
+function preload() {
+    loader = new Loader();
+    loader.addImage("texture", "https://raw.githack.com/DonDejvo/helloworld/main/games/tetris/assets/tiles.png");
+    loader.addImage("bg", "https://raw.githack.com/DonDejvo/helloworld/main/games/tetris/assets/background.png");
+    loader.addImage("fg", "https://raw.githack.com/DonDejvo/helloworld/main/games/tetris/assets/frame.png");
+    loader.load(init);
+}
+
+function init(data) {
+    
+    id("intro-text").innerHTML = "tap to play";
+    c = id("game");
+    ctx = c.getContext("2d");
+    handleResize();
+
+    addEventListener("resize", handleResize);
+
+    keyboard = new Keyboard();
+    keyboard.keydown("w", handleRotate);
+    keyboard.keydown("a", handleLeft);
+    keyboard.keydown("d", handleRight);
+    keyboard.keydown("p", handlePause);
+
+    new Button(id("button1")).press(handleLeft);
+    new Button(id("button2")).press(handleRight);
+    new Button(id("button3")).press(handleRotate);
+    btn = new Button(id("button4"));
+    new Button(id("pause-button")).press(handlePause);
+
+    id("intro").onclick = handleStart;
+
+    texture = data["texture"];
+    bg = data["bg"];
+    fg = data["fg"];
+    music = id("music");
+
+    resetGrid();
+    shape.reset();
+
+    const update = function() {
+        shape.update();
+        checkGrid();
+        id("score").innerHTML = "score: " + score;
+    }
+
+    const render = function() {
+        buffer.fillStyle = "white";
+        buffer.fillRect(0, 0, buffer.canvas.width, buffer.canvas.height);
+        buffer.drawImage(bg, 0, 0);
+        drawGrid();
+        shape.draw();
+        buffer.drawImage(fg, 0, 0);
+        ctx.drawImage(buffer.canvas, 0, 0, buffer.canvas.width, buffer.canvas.height, 0, 0, c.width, c.height);
+    }
+
+    engine = new Engine(update, render, 1000/30);
+
+}
+    </script>
+
+</body>
+</html>
